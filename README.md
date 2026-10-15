@@ -4,6 +4,8 @@ A streaming platform for monitoring a large fleet of always-on assets — here, 
 
 ![CI](https://github.com/wallaceandrew9331-create/fleet-telemetry/actions/workflows/ci.yml/badge.svg)
 
+**Performance:** one ingest process sustains 20k msg/s (10k assets at 2 Hz) with p99 end-to-end latency of 0.8 s, and saturates at ~24k msg/s. It used to fall behind at ~15k. The load tests, py-spy profiles and fixes are in [PERFORMANCE.md](PERFORMANCE.md).
+
 <!-- TODO: replace with a GIF of the dashboard -->
 
 ## Architecture
@@ -72,7 +74,7 @@ cd dashboard && npm test
 | `over_temp` | temp > 55 °C | warning; critical > 70 °C |
 | `safe_mode` | asset reports `safe_mode` | critical |
 | `seq_gap` | sequence number skips (dropped messages) | warning |
-| `lost_contact` | no telemetry for 5× the expected interval | critical |
+| `lost_contact` | no telemetry for 5× the expected interval, measured in stream time (see below) | critical |
 | `restart` | sequence number resets with a newer timestamp (asset rebooted) | warning |
 
 Threshold alerts are **edge-triggered**: they fire when a condition begins and re-arm only after it clears, so a single overheating asset produces one alert rather than one per message.
@@ -87,7 +89,9 @@ Threshold alerts are **edge-triggered**: they fire when a condition begins and r
 
 **Partition by asset ID.** Guarantees per-asset ordering, which the sequence-gap detector depends on, while still allowing the consumer group to scale horizontally across partitions.
 
-**Batch writes via `COPY`.** The consumer pulls up to 5,000 records per poll and writes them with a single `COPY` plus one upsert per distinct asset, in one transaction.
+**Batch writes via `COPY` and `unnest`.** The consumer pulls up to 5,000 records per poll and writes them in one transaction: raw rows with a single `COPY`, then the newest row per asset as one `UPDATE … FROM unnest(...)` statement (first-seen assets take an `INSERT … ON CONFLICT` path). Replacing a per-row `executemany` upsert with this made the latest-state write ~4× cheaper and raised single-consumer throughput from ~15k to ~24k msg/s — see [PERFORMANCE.md](PERFORMANCE.md).
+
+**Staleness in stream time, not wall time.** `lost_contact` compares each asset against a watermark (newest event time processed, advanced by wall time between batches) rather than the wall clock. With the wall clock, a consumer that fell behind reported the entire fleet lost every few seconds — 4.3M false alerts in one load test — and writing those alerts deepened the backlog that caused them. Consumer lag is exported separately as `ingest_consumer_lag_seconds`.
 
 **Coalesced WebSocket deltas.** The dashboard doesn't need every message. The hub keeps the latest state per asset and broadcasts one delta per second containing only changed assets, so browser cost scales with fleet size rather than message rate. Clients that fall behind are disconnected (bounded queue) and resync from a fresh snapshot on reconnect.
 
@@ -97,7 +101,8 @@ Threshold alerts are **edge-triggered**: they fire when a condition begins and r
 
 ## Roadmap
 
-- [ ] `PERFORMANCE.md`: load test at 1k / 5k / 10k assets, profile the consumer, document bottlenecks and fixes with before/after p99 end-to-end latency
+- [x] [`PERFORMANCE.md`](PERFORMANCE.md): load test at 1k / 5k / 10k assets, profile the consumer, document bottlenecks and fixes with before/after p99 end-to-end latency
+- [ ] Scale ingest past one partition: more partitions + consumer replicas (needs a shared view for the WebSocket hub)
 - [ ] Canvas-rendered map for 10k+ assets (SVG is the current ceiling)
 - [ ] Kubernetes manifests (kind) with horizontally scaled ingest consumers
 - [ ] Grafana dashboard provisioned from `/metrics`
