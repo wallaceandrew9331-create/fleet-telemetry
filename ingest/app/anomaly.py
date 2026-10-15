@@ -26,6 +26,40 @@ class _AssetState:
     active: set[AlertKind] = field(default_factory=set)
 
 
+class StreamClock:
+    """Event-time "now" for staleness checks.
+
+    Judging silence against wall-clock time breaks when the consumer falls
+    behind: every asset's newest processed message is older than the stale
+    threshold, so every asset is reported lost, every few seconds, and the
+    alert writes deepen the backlog that caused them. Instead, track the
+    newest event timestamp processed (the watermark) and let it advance with
+    wall time between batches. A backlogged consumer then sees a clock that
+    trails real time by its lag, while a feed that stops entirely still lets
+    the clock run forward so a real outage is reported.
+    """
+
+    def __init__(self) -> None:
+        self._watermark: datetime | None = None
+        self._advanced_at: datetime | None = None
+
+    def advance(self, event_ts: datetime, wall: datetime) -> None:
+        # Clamp to wall time so one asset with a fast clock can't drag the
+        # watermark ahead and make the rest of the fleet look stale.
+        event_ts = min(event_ts, wall)
+        if self._watermark is None or event_ts > self._watermark:
+            self._watermark = event_ts
+        self._advanced_at = wall
+
+    def now(self, wall: datetime) -> datetime:
+        if self._watermark is None or self._advanced_at is None:
+            return wall
+        return self._watermark + (wall - self._advanced_at)
+
+    def lag(self, wall: datetime) -> timedelta:
+        return wall - self.now(wall)
+
+
 class AnomalyDetector:
     def __init__(self, expected_interval: timedelta, stale_after_intervals: int = 5):
         self.stale_after = expected_interval * stale_after_intervals

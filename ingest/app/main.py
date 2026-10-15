@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnec
 from fastapi.responses import Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
-from .anomaly import AnomalyDetector
+from .anomaly import AnomalyDetector, StreamClock
 from .config import settings
 from .consumer import run_broadcaster, run_consumer, run_stale_checker
 from .db import Repository
@@ -25,6 +25,7 @@ async def lifespan(app: FastAPI):
     repo = await Repository.connect(settings.database_url)
     hub = FleetHub()
     detector = AnomalyDetector(settings.expected_interval)
+    clock = StreamClock()
 
     # Warm state from the database so a restart doesn't blank the dashboard
     # or misreport every asset's first message as a sequence gap.
@@ -36,8 +37,8 @@ async def lifespan(app: FastAPI):
 
     app.state.repo, app.state.hub = repo, hub
     tasks = [
-        asyncio.create_task(run_consumer(settings, repo, hub, detector), name="consumer"),
-        asyncio.create_task(run_stale_checker(settings, repo, hub, detector), name="stale-checker"),
+        asyncio.create_task(run_consumer(settings, repo, hub, detector, clock), name="consumer"),
+        asyncio.create_task(run_stale_checker(settings, repo, hub, detector, clock), name="stale-checker"),
         asyncio.create_task(run_broadcaster(settings, hub), name="broadcaster"),
     ]
     for t in tasks:

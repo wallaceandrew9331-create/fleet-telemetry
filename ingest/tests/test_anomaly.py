@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
-from app.anomaly import AnomalyDetector
+from app.anomaly import AnomalyDetector, StreamClock
 from app.models import AlertKind, Severity, Telemetry
 
 T0 = datetime(2026, 1, 1, tzinfo=UTC)
@@ -102,3 +102,51 @@ def test_seed_prevents_false_gap_after_restart():
     d = detector()
     d.seed("SAT-00001", last_seq=100, last_seen=T0)
     assert d.observe(tel(101)) == []
+
+
+def test_stream_clock_tracks_wall_time_when_consumer_is_current():
+    clock = StreamClock()
+    wall = T0 + timedelta(seconds=100)
+    assert clock.now(wall) == wall  # nothing processed yet
+    clock.advance(wall - timedelta(milliseconds=20), wall)
+    assert clock.now(wall + timedelta(seconds=1)) == wall + timedelta(seconds=1) - timedelta(milliseconds=20)
+
+
+def test_stream_clock_keeps_running_when_feed_stops():
+    clock = StreamClock()
+    clock.advance(T0, T0)
+    assert clock.now(T0 + timedelta(seconds=30)) == T0 + timedelta(seconds=30)
+
+
+def test_stream_clock_ignores_events_from_the_future():
+    clock = StreamClock()
+    clock.advance(T0 + timedelta(hours=1), T0)  # one asset with a fast clock
+    assert clock.now(T0) == T0
+
+
+def test_backlogged_consumer_does_not_report_whole_fleet_lost():
+    # Regression: with the consumer 60 s behind, wall-clock staleness reported
+    # every asset as lost on every check (4.3M false alerts in a 20k msg/s run).
+    d, clock = detector(), StreamClock()
+    lag = timedelta(seconds=60)
+    for step in range(1, 20):
+        event_ts = T0 + timedelta(seconds=step)
+        for i in range(100):
+            d.observe(tel(step, asset_id=f"SAT-{i:05d}", ts=event_ts))
+        clock.advance(event_ts, event_ts + lag)
+        wall = event_ts + lag + timedelta(milliseconds=500)
+        assert d.check_stale(clock.now(wall)) == []
+        assert d.check_stale(wall) != []  # what the old wall-clock check did
+
+
+def test_silent_asset_is_still_detected_while_others_report():
+    d, clock = detector(), StreamClock()
+    lag = timedelta(seconds=60)
+    d.observe(tel(1, asset_id="SAT-QUIET", ts=T0))
+    lost = []
+    for step in range(1, 20):
+        event_ts = T0 + timedelta(seconds=step)
+        d.observe(tel(step, ts=event_ts))
+        clock.advance(event_ts, event_ts + lag)
+        lost += d.check_stale(clock.now(event_ts + lag))
+    assert [(a.asset_id, a.kind) for a in lost] == [("SAT-QUIET", AlertKind.LOST_CONTACT)]

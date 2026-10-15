@@ -18,7 +18,7 @@ from aiokafka import AIOKafkaConsumer
 from pydantic import ValidationError
 
 from . import metrics
-from .anomaly import AnomalyDetector
+from .anomaly import AnomalyDetector, StreamClock
 from .config import Settings
 from .db import Repository
 from .hub import FleetHub
@@ -55,7 +55,9 @@ async def write_with_retry(repo: Repository, batch: list[Telemetry], alerts: lis
             delay = min(delay * 2, 10)
 
 
-async def run_consumer(settings: Settings, repo: Repository, hub: FleetHub, detector: AnomalyDetector) -> None:
+async def run_consumer(
+    settings: Settings, repo: Repository, hub: FleetHub, detector: AnomalyDetector, clock: StreamClock
+) -> None:
     consumer = AIOKafkaConsumer(
         settings.kafka_topic,
         bootstrap_servers=settings.kafka_brokers,
@@ -85,6 +87,8 @@ async def run_consumer(settings: Settings, repo: Repository, hub: FleetHub, dete
             now = datetime.now(UTC)
             for t in batch:
                 metrics.END_TO_END_SECONDS.observe((now - t.ts).total_seconds())
+            if batch:
+                clock.advance(max(t.ts for t in batch), now)
             metrics.MESSAGES.labels("ok").inc(len(batch))
             record_alert_metrics(alerts)
             hub.apply(batch, alerts)
@@ -104,10 +108,14 @@ async def start_with_retry(consumer: AIOKafkaConsumer, attempts: int = 30) -> No
     raise RuntimeError("could not connect to Kafka")
 
 
-async def run_stale_checker(settings: Settings, repo: Repository, hub: FleetHub, detector: AnomalyDetector) -> None:
+async def run_stale_checker(
+    settings: Settings, repo: Repository, hub: FleetHub, detector: AnomalyDetector, clock: StreamClock
+) -> None:
     while True:
         await asyncio.sleep(settings.expected_interval.total_seconds())
-        alerts = detector.check_stale(datetime.now(UTC))
+        wall = datetime.now(UTC)
+        metrics.CONSUMER_LAG_SECONDS.set(clock.lag(wall).total_seconds())
+        alerts = detector.check_stale(clock.now(wall))
         if alerts:
             await write_with_retry(repo, [], alerts)
             record_alert_metrics(alerts)
