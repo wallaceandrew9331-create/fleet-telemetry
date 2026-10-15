@@ -2,7 +2,7 @@
 
 A streaming platform for monitoring a large fleet of always-on assets — here, a simulated satellite constellation. Hundreds to thousands of devices publish telemetry independently; the platform ingests it through Kafka, detects anomalies in real time, persists it to a time-series database, and drives a live operator dashboard.
 
-![CI](https://github.com/OWNER/fleet-telemetry/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/wallaceandrew9331-create/fleet-telemetry/actions/workflows/ci.yml/badge.svg)
 
 <!-- TODO: replace with a GIF of the dashboard -->
 
