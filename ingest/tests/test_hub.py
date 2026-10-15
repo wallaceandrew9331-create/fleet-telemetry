@@ -1,16 +1,16 @@
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from app.consumer import parse_batch
 from app.hub import CLIENT_QUEUE_DEPTH, FleetHub
 from app.models import Alert, AlertKind, Severity, Telemetry
 
 
-def tel(asset_id: str, seq: int, battery: float = 80.0) -> Telemetry:
+def tel(asset_id: str, seq: int, battery: float = 80.0, at: int = 0) -> Telemetry:
     return Telemetry(
         asset_id=asset_id,
         seq=seq,
-        ts=datetime(2026, 1, 1, tzinfo=UTC),
+        ts=datetime(2026, 1, 1, tzinfo=UTC) + timedelta(seconds=at),
         lat=1.0,
         lon=2.0,
         alt_km=550.0,
@@ -30,11 +30,18 @@ def test_delta_coalesces_many_updates_per_asset():
     assert hub.take_delta() is None
 
 
-def test_stale_update_does_not_overwrite_newer_state():
+def test_older_update_does_not_overwrite_newer_state():
     hub = FleetHub()
-    hub.apply([tel("A", 5, battery=10)], [])
-    hub.apply([tel("A", 3, battery=99)], [])
+    hub.apply([tel("A", 5, battery=10, at=5)], [])
+    hub.apply([tel("A", 3, battery=99, at=3)], [])
     assert hub.assets["A"]["battery_pct"] == 10
+
+
+def test_rebooted_asset_with_reset_seq_still_updates():
+    hub = FleetHub()
+    hub.apply([tel("A", 500, battery=10, at=500)], [])
+    hub.apply([tel("A", 1, battery=99, at=600)], [])
+    assert hub.assets["A"]["seq"] == 1
 
 
 def test_alerts_flow_into_delta_and_recent_list():

@@ -37,10 +37,24 @@ class AnomalyDetector:
 
         if state is None:
             state = self._assets[t.asset_id] = _AssetState(last_seq=t.seq, last_seen=t.ts)
-        else:
-            if t.seq <= state.last_seq:
+        elif t.seq <= state.last_seq:
+            if t.ts <= state.last_seen:
                 # Duplicate or reordered delivery; never let it rewind state.
                 return []
+            # Newer timestamp but lower sequence number: the asset rebooted
+            # and restarted its counter. Re-baseline rather than drop it forever.
+            alerts.append(
+                Alert(
+                    t.asset_id,
+                    AlertKind.RESTART,
+                    Severity.WARNING,
+                    f"sequence reset from {state.last_seq} to {t.seq}",
+                    t.ts,
+                )
+            )
+            state.last_seq = t.seq
+            state.last_seen = t.ts
+        else:
             missed = t.seq - state.last_seq - 1
             if missed > 0:
                 alerts.append(

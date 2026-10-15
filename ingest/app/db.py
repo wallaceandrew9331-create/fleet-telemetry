@@ -14,7 +14,7 @@ ON CONFLICT (asset_id) DO UPDATE SET
     lat = EXCLUDED.lat, lon = EXCLUDED.lon, alt_km = EXCLUDED.alt_km,
     battery_pct = EXCLUDED.battery_pct, temp_c = EXCLUDED.temp_c,
     signal_db = EXCLUDED.signal_db, status = EXCLUDED.status
-WHERE assets.last_seq < EXCLUDED.last_seq
+WHERE assets.last_seen <= EXCLUDED.last_seen
 """
 
 
@@ -38,7 +38,7 @@ class Repository:
         latest: dict[str, Telemetry] = {}
         for t in batch:
             cur = latest.get(t.asset_id)
-            if cur is None or t.seq > cur.seq:
+            if cur is None or t.ts >= cur.ts:
                 latest[t.asset_id] = t
 
         async with self.pool.acquire() as conn, conn.transaction():

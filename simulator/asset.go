@@ -117,9 +117,9 @@ func (a *Asset) Step(now time.Time, dt time.Duration, simSeconds float64, rng *r
 
 	switch a.fault {
 	case FaultBatteryDrain:
-		a.battery -= 0.6 * dt.Seconds()
+		a.battery -= 0.15 * dt.Seconds()
 	case FaultOverheat:
-		a.tempC += 0.8 * dt.Seconds()
+		a.tempC += 0.15 * dt.Seconds()
 	}
 	a.battery = clamp(a.battery, 0, 100)
 

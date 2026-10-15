@@ -41,7 +41,7 @@ services:
       KAFKA_TOPIC: telemetry
       ASSET_COUNT: ${ASSET_COUNT:-500}
       INTERVAL_MS: ${INTERVAL_MS:-1000}
-      FAULT_RATE: ${FAULT_RATE:-0.002}
+      FAULT_RATE: ${FAULT_RATE:-0.0005}
     depends_on:
       redpanda:
         condition: service_healthy

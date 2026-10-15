@@ -21,7 +21,8 @@ export function applyMessage(state: FleetState, msg: StreamMessage): FleetState 
   const assets = { ...state.assets };
   for (const a of msg.assets) {
     const prev = assets[a.asset_id];
-    if (!prev || prev.seq < a.seq) assets[a.asset_id] = a;
+    // Compare timestamps, not seq: seq restarts at 1 when an asset reboots.
+    if (!prev || Date.parse(prev.ts) <= Date.parse(a.ts)) assets[a.asset_id] = a;
   }
   // Server sends alerts oldest-first within a delta; the feed shows newest first.
   const alerts = [...msg.alerts].reverse().concat(state.alerts).slice(0, MAX_ALERTS);

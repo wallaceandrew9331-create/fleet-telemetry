@@ -32,8 +32,16 @@ describe("applyMessage", () => {
 
   it("ignores out-of-order asset updates in a delta", () => {
     let s = applyMessage(emptyFleet, { type: "snapshot", assets: [asset("A", { seq: 5 })], alerts: [] });
-    s = applyMessage(s, { type: "delta", assets: [asset("A", { seq: 3, battery_pct: 1 })], alerts: [] });
+    const older = asset("A", { seq: 3, battery_pct: 1, ts: "2026-01-01T00:00:07Z" });
+    s = applyMessage(s, { type: "delta", assets: [older], alerts: [] });
     expect(s.assets.A.battery_pct).toBe(80);
+  });
+
+  it("accepts a rebooted asset whose seq reset", () => {
+    let s = applyMessage(emptyFleet, { type: "snapshot", assets: [asset("A", { seq: 500 })], alerts: [] });
+    const rebooted = asset("A", { seq: 1, ts: "2026-01-01T00:00:10Z" });
+    s = applyMessage(s, { type: "delta", assets: [rebooted], alerts: [] });
+    expect(s.assets.A.seq).toBe(1);
   });
 
   it("prepends new alerts newest-first", () => {

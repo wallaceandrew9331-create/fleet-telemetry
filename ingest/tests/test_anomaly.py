@@ -87,6 +87,17 @@ def test_stale_asset_alerts_once_and_rearms_after_contact():
     assert kinds(d.check_stale(last_seen + timedelta(seconds=40))) == [AlertKind.LOST_CONTACT]
 
 
+def test_reboot_with_seq_reset_rebaselines_instead_of_dropping():
+    d = detector()
+    d.observe(tel(500))
+    reboot = d.observe(tel(1, ts=T0 + timedelta(seconds=600)))
+    assert kinds(reboot) == [AlertKind.RESTART]
+    assert "500 to 1" in reboot[0].message
+    # Subsequent messages are processed normally, with gap detection intact.
+    assert d.observe(tel(2, ts=T0 + timedelta(seconds=601))) == []
+    assert kinds(d.observe(tel(5, ts=T0 + timedelta(seconds=604)))) == [AlertKind.SEQ_GAP]
+
+
 def test_seed_prevents_false_gap_after_restart():
     d = detector()
     d.seed("SAT-00001", last_seq=100, last_seen=T0)

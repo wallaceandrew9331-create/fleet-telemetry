@@ -51,7 +51,7 @@ func TestBatteryDrainFaultEntersSafeMode(t *testing.T) {
 	a, rng := newTestAsset()
 	a.InjectFault(FaultBatteryDrain, 1_000_000)
 	var tel Telemetry
-	for i := 0; i < 500; i++ {
+	for i := 0; i < 2000; i++ {
 		tel, _ = a.Step(time.Unix(int64(i), 0), 2*time.Second, 0, rng)
 	}
 	if tel.Status != "safe_mode" {

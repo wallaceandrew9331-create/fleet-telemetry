@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
+from datetime import datetime
 
 from .models import Alert, Telemetry
 
@@ -19,6 +20,7 @@ CLIENT_QUEUE_DEPTH = 8
 class FleetHub:
     def __init__(self) -> None:
         self.assets: dict[str, dict] = {}
+        self._last_ts: dict[str, datetime] = {}
         self.recent_alerts: deque[dict] = deque(maxlen=RECENT_ALERTS)
         self._dirty: set[str] = set()
         self._pending_alerts: list[dict] = []
@@ -26,10 +28,12 @@ class FleetHub:
         self.dropped_clients = 0
 
     def apply(self, batch: list[Telemetry], alerts: list[Alert]) -> None:
+        # Recency is judged by timestamp, not seq: seq resets when an asset reboots.
         for t in batch:
-            prev = self.assets.get(t.asset_id)
-            if prev is not None and prev["seq"] >= t.seq:
+            prev_ts = self._last_ts.get(t.asset_id)
+            if prev_ts is not None and t.ts < prev_ts:
                 continue
+            self._last_ts[t.asset_id] = t.ts
             self.assets[t.asset_id] = t.model_dump(mode="json")
             self._dirty.add(t.asset_id)
         for a in alerts:

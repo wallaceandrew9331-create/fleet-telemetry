@@ -36,7 +36,7 @@ func loadConfig() config {
 		topic:      env("KAFKA_TOPIC", "telemetry"),
 		assetCount: envInt("ASSET_COUNT", 500),
 		interval:   time.Duration(envInt("INTERVAL_MS", 1000)) * time.Millisecond,
-		faultRate:  envFloat("FAULT_RATE", 0.002),
+		faultRate:  envFloat("FAULT_RATE", 0.0005),
 		timeScale:  envFloat("TIME_SCALE", 20),
 	}
 }
@@ -50,6 +50,8 @@ func main() {
 		kgo.DefaultProduceTopic(cfg.topic),
 		kgo.AllowAutoTopicCreation(),
 		kgo.ProducerLinger(20*time.Millisecond),
+		// Consumers must have the matching codec installed (aiokafka[snappy] in ingest).
+		kgo.ProducerBatchCompression(kgo.SnappyCompression()),
 	)
 	if err != nil {
 		log.Error("kafka client", "err", err)

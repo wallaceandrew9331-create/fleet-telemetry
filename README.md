@@ -73,6 +73,7 @@ cd dashboard && npm test
 | `safe_mode` | asset reports `safe_mode` | critical |
 | `seq_gap` | sequence number skips (dropped messages) | warning |
 | `lost_contact` | no telemetry for 5× the expected interval | critical |
+| `restart` | sequence number resets with a newer timestamp (asset rebooted) | warning |
 
 Threshold alerts are **edge-triggered**: they fire when a condition begins and re-arm only after it clears, so a single overheating asset produces one alert rather than one per message.
 
@@ -80,7 +81,9 @@ Threshold alerts are **edge-triggered**: they fire when a condition begins and r
 
 **Kafka between producers and storage.** Decouples device publish rate from database write rate. If Postgres slows or restarts, the consumer stops pulling and Kafka absorbs the backlog rather than the ingest process's memory.
 
-**At-least-once delivery.** Offsets are committed only after a batch is durably written. A crash between write and commit replays the batch: the `assets` upsert ignores rows with an older `seq`, and the detector drops duplicate/reordered sequence numbers, so replays don't corrupt current state. Raw telemetry rows may duplicate on replay — acceptable for this use and cheaper than a dedupe index on a hot hypertable.
+**At-least-once delivery.** Offsets are committed only after a batch is durably written. A crash between write and commit replays the batch: the `assets` upsert ignores rows older than the stored timestamp, and the detector drops duplicate/reordered messages, so replays don't corrupt current state. Raw telemetry rows may duplicate on replay — acceptable for this use and cheaper than a dedupe index on a hot hypertable.
+
+**Recency by timestamp, gaps by sequence.** Sequence numbers detect dropped messages, but they restart at 1 when an asset reboots. Latest-state comparisons therefore use the asset's timestamp; a lower sequence number paired with a newer timestamp is treated as a reboot (`restart` alert) and the gap detector re-baselines. Found by restarting the simulator mid-run: before the fix, every rebooted asset was silently discarded as a duplicate.
 
 **Partition by asset ID.** Guarantees per-asset ordering, which the sequence-gap detector depends on, while still allowing the consumer group to scale horizontally across partitions.
 

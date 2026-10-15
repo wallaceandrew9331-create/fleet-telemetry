@@ -61,6 +61,7 @@ class AlertKind(StrEnum):
     SAFE_MODE = "safe_mode"
     SEQ_GAP = "seq_gap"
     LOST_CONTACT = "lost_contact"
+    RESTART = "restart"
 
 
 @dataclass(frozen=True)
