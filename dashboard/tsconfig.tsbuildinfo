@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/fleet.test.ts","./src/fleet.ts","./src/main.tsx","./src/types.ts","./src/usefleetstream.ts","./src/components/alertfeed.tsx","./src/components/assetdetail.tsx","./src/components/assettable.tsx","./src/components/fleetmap.tsx","./vite.config.ts"],"version":"5.6.3"}

@@ -1,0 +1,72 @@
+name: fleet-telemetry
+
+services:
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.7
+    command:
+      - redpanda start
+      - --mode dev-container
+      - --smp 1
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+    ports:
+      - "19092:19092"
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  postgres:
+    image: timescale/timescaledb:2.17.2-pg16
+    environment:
+      POSTGRES_USER: fleet
+      POSTGRES_PASSWORD: fleet
+      POSTGRES_DB: fleet
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/001-init.sql:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fleet -d fleet"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  simulator:
+    build: ./simulator
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+      KAFKA_TOPIC: telemetry
+      ASSET_COUNT: ${ASSET_COUNT:-500}
+      INTERVAL_MS: ${INTERVAL_MS:-1000}
+      FAULT_RATE: ${FAULT_RATE:-0.002}
+    depends_on:
+      redpanda:
+        condition: service_healthy
+
+  ingest:
+    build: ./ingest
+    environment:
+      KAFKA_BROKERS: redpanda:9092
+      KAFKA_TOPIC: telemetry
+      DATABASE_URL: postgresql://fleet:fleet@postgres:5432/fleet
+      EXPECTED_INTERVAL_MS: ${INTERVAL_MS:-1000}
+    ports:
+      - "8000:8000"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  dashboard:
+    build: ./dashboard
+    ports:
+      - "8080:80"
+    depends_on:
+      - ingest
+
+volumes:
+  pgdata:
