@@ -50,6 +50,11 @@ func main() {
 		kgo.DefaultProduceTopic(cfg.topic),
 		kgo.AllowAutoTopicCreation(),
 		kgo.ProducerLinger(20*time.Millisecond),
+		// The default 10k-record buffer is one tick's worth of messages at 10k
+		// assets. Once it fills, every asset goroutine blocks in Produce and each
+		// freed slot wakes all of them: at 40k msg/s the simulator burned 10 cores
+		// to send ~165 msg/s. 100k records is ~2.5 s of headroom at that rate.
+		kgo.MaxBufferedRecords(100_000),
 		// Consumers must have the matching codec installed (aiokafka[snappy] in ingest).
 		kgo.ProducerBatchCompression(kgo.SnappyCompression()),
 	)
